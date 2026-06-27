@@ -5,3 +5,4 @@ Cargo.lock.bak
 
 # WIP scratch — confidential drafts, never committed
 _WIP/
+examples/**/composition.ttl

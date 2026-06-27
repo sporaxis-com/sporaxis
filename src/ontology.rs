@@ -49,6 +49,8 @@ pub enum Predicate {
 /// A composition entity (SPEC §6 `kernels/<name>/kernel.yaml`).
 #[derive(Debug, Clone, Deserialize)]
 pub struct Entity {
+    /// Set from the kernel's directory name (SPEC §6), not the yaml body.
+    #[serde(default)]
     pub name: String,
     #[serde(rename = "type")]
     pub entity_type: EntityType,
@@ -62,11 +64,41 @@ pub struct Entity {
 }
 
 /// A directed predicate instance (SPEC §6 `links/<subj>.<PRED>.<obj>.yaml`).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Link {
     pub subject: String,
     pub predicate: Predicate,
     pub object: String,
+}
+
+impl Link {
+    /// Parse `<subject>.<PREDICATE>.<object>` from a link filename stem. The
+    /// predicate is one of the six known tokens; subject/object are kebab-case
+    /// (so we split on the predicate, not on every `.`).
+    fn from_filename(stem: &str) -> anyhow::Result<Self> {
+        const PREDS: [(&str, Predicate); 6] = [
+            ("INHERITS_FROM", Predicate::InheritsFrom),
+            ("COPIES_FROM", Predicate::CopiesFrom),
+            ("BUILDS", Predicate::Builds),
+            ("SUPERVISES", Predicate::Supervises),
+            ("SHIMS_FOR", Predicate::ShimsFor),
+            ("SMOKES_BY", Predicate::SmokesBy),
+        ];
+        for (tok, pred) in PREDS {
+            let pat = format!(".{tok}.");
+            if let Some(i) = stem.find(&pat) {
+                return Ok(Link {
+                    subject: stem[..i].to_string(),
+                    predicate: pred,
+                    object: stem[i + pat.len()..].to_string(),
+                });
+            }
+        }
+        anyhow::bail!(
+            "link '{stem}' has no recognised predicate \
+             (expected <subject>.<PREDICATE>.<object>.yaml)"
+        )
+    }
 }
 
 /// One bundle's composition graph.
@@ -77,17 +109,85 @@ pub struct Composition {
 }
 
 impl Composition {
-    /// Load a `<bundle>.composition/` directory (SPEC §6: `COMPOSE.yaml` +
-    /// `kernels/**/kernel.yaml` + `links/*.yaml` + `notifies/`).
-    ///
-    /// v0.0.1 scaffold: returns an empty graph so the CLI runs end-to-end. The
-    /// real walk + serde parse (and the hard-error on a mis-named file) is the
-    /// first task of milestone **M2**.
+    /// Load a `<bundle>.composition/` directory (SPEC §6): `kernels/<name>/kernel.yaml`
+    /// (one entity; `name` = the directory) + `links/<subj>.<PREDICATE>.<obj>.yaml`
+    /// (one predicate instance; subject/predicate/object from the filename). Reads
+    /// in sorted order so the downstream render is deterministic (SPEC §4).
     pub fn load(dir: &Path) -> anyhow::Result<Self> {
-        // TODO(M2): walk kernels/ + links/; parse with serde_yaml; reject any
-        // file in kernels/ not named kernel.yaml and any link not matching
-        // *.<PREDICATE>.*.yaml (SPEC §6).
-        let _ = dir;
-        Ok(Composition::default())
+        let mut entities = Vec::new();
+        let kernels = dir.join("kernels");
+        if kernels.is_dir() {
+            let mut kdirs: Vec<_> = std::fs::read_dir(&kernels)?
+                .filter_map(Result::ok)
+                .map(|e| e.path())
+                .filter(|p| p.is_dir())
+                .collect();
+            kdirs.sort();
+            for kdir in kdirs {
+                let ky = kdir.join("kernel.yaml");
+                let name = kdir
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned();
+                anyhow::ensure!(ky.exists(), "kernels/{name}: missing kernel.yaml");
+                let mut e: Entity = serde_yaml::from_reader(std::fs::File::open(&ky)?)
+                    .map_err(|err| anyhow::anyhow!("{}: {err}", ky.display()))?;
+                e.name = name;
+                entities.push(e);
+            }
+        }
+
+        let mut links = Vec::new();
+        let linksdir = dir.join("links");
+        if linksdir.is_dir() {
+            let mut files: Vec<_> = std::fs::read_dir(&linksdir)?
+                .filter_map(Result::ok)
+                .map(|e| e.path())
+                .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("yaml"))
+                .collect();
+            files.sort();
+            for f in files {
+                let stem = f.file_stem().and_then(|s| s.to_str()).unwrap_or_default();
+                links.push(Link::from_filename(stem)?);
+            }
+        }
+
+        Ok(Composition { entities, links })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn loads_the_example_composition() {
+        let dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/hello.composition");
+        let comp = Composition::load(&dir).expect("load");
+        assert_eq!(comp.entities.len(), 3, "3 kernels");
+        assert_eq!(comp.links.len(), 2, "2 links");
+        assert!(comp
+            .entities
+            .iter()
+            .any(|e| e.name == "ck-allinone" && matches!(e.entity_type, EntityType::FleetImage)));
+        assert!(comp
+            .entities
+            .iter()
+            .any(|e| e.name == "pgrdf" && e.placement_layer.is_some()));
+        assert!(comp
+            .links
+            .iter()
+            .any(|l| l.subject == "ck-allinone" && matches!(l.predicate, Predicate::InheritsFrom)));
+    }
+
+    #[test]
+    fn link_filename_splits_on_the_predicate_not_every_dot() {
+        let l = Link::from_filename("ck-allinone.COPIES_FROM.pgrdf").unwrap();
+        assert_eq!(l.subject, "ck-allinone");
+        assert_eq!(l.object, "pgrdf");
+        assert!(matches!(l.predicate, Predicate::CopiesFrom));
+        assert!(Link::from_filename("no-predicate-here").is_err());
     }
 }

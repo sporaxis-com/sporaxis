@@ -27,7 +27,13 @@ pub fn emit(comp: &Composition, mode: &str, dir: &Path) -> anyhow::Result<()> {
     // composition.ttl is emitted in BOTH modes — the BOM as RDF (SPEC v0.2 §E),
     // built on oxigraph. Wired now; the Dockerfile/manifest emitters land at M2.
     let ttl = crate::ttl::to_turtle(comp)?;
-    println!("  composition.ttl: {} bytes (oxigraph Turtle)", ttl.len());
+    let ttl_path = dir.join("composition.ttl");
+    std::fs::write(&ttl_path, &ttl)?;
+    println!(
+        "  composition.ttl: {} bytes → {}",
+        ttl.len(),
+        ttl_path.display()
+    );
     // TODO(M2): emit, deterministically (SPEC §4 determinism rule):
     //   dockerfile mode → Dockerfile (INHERITS_FROM/COPIES_FROM/BUILDS),
     //                     s6-services/ (SUPERVISES), bundle.yaml, smoke, CHECKLIST
