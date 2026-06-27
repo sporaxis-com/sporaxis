@@ -117,6 +117,7 @@ mod tests {
                 subject: "ck-allinone".into(),
                 predicate: Predicate::InheritsFrom,
                 object: "pg-base".into(),
+                meta: Default::default(),
             }],
         };
         let ttl = to_turtle(&comp).expect("turtle");

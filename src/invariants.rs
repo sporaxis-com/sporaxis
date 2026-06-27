@@ -5,19 +5,20 @@
 //!
 //! - I1  no `oci:UpstreamImage` is the subject of `BUILDS`   (never compile upstream)   [error]
 //! - I2  no `oci:UpstreamImage` is the subject of `SHIMS_FOR` (never patch upstream)     [error]
+//! - I3  every `SHIMS_FOR` carries a `notify:` (the NOTIFY it is tracked by)             [error]
+//! - I4  every `SHIMS_FOR` carries a `retire_when:` probe + behaviour                    [error]
 //! - I5  every `svc:Process` has a `SMOKES_BY` (`… none` ⇒ classified `pure`)            [error/warn]
-//! - I6  duplicate-pull: COPIES_FROM(x, upstream) when x already inherits that upstream  [warn]
+//! - I6  duplicate-pull: COPIES_FROM(x, upstream) already inherited, unless `reason:`    [warn]
+//! - I8  no committed link metadata references a `.gitignore`'d `_WIP/` path             [error]
 //!
-//! Implemented here at the graph level. The remaining invariants depend on inputs
-//! this stage does not yet have, and are tracked separately:
-//!
-//! - I3/I4  `notify:` / `retire_when:` on every `SHIMS_FOR` — need the link YAML body (not yet retained by the parser).
-//! - I8  no committed output references a `.gitignore`'d path — needs link bodies + gitignore awareness.
-//! - I7  manifest labels derive only from the `oci:FleetImage` entity — an emit-time rule for the renderer (M2), not a pre-emit check.
+//! All graph-level. Only **I7** remains — manifest labels derive only from the
+//! `oci:FleetImage` entity — and it is an emit-time rule enforced by the renderer
+//! (M2), not a pre-emit graph check. I3/I4/I8 read the link YAML *body*, parsed
+//! into `ontology::LinkMeta`.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::ontology::{Composition, EntityType, Predicate};
+use crate::ontology::{Composition, EntityType, LinkMeta, Predicate};
 
 /// Whether a violation blocks emission (`Error`) or is advisory (`Warning`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,6 +97,32 @@ fn inherits_reaches<'a>(start: &str, target: &str, adj: &BTreeMap<&'a str, Vec<&
     false
 }
 
+/// Recursively collect every string scalar inside a YAML value.
+fn collect_strings(v: &serde_yaml::Value, out: &mut Vec<String>) {
+    match v {
+        serde_yaml::Value::String(s) => out.push(s.clone()),
+        serde_yaml::Value::Sequence(seq) => seq.iter().for_each(|x| collect_strings(x, out)),
+        serde_yaml::Value::Mapping(m) => m.iter().for_each(|(_, val)| collect_strings(val, out)),
+        _ => {}
+    }
+}
+
+/// Does any string in this link's metadata reference a gitignored `_WIP/` path? (I8)
+fn references_wip(meta: &LinkMeta) -> bool {
+    let mut strings: Vec<String> = [&meta.notify, &meta.reason, &meta.because]
+        .into_iter()
+        .flatten()
+        .cloned()
+        .collect();
+    if let Some(rw) = &meta.retire_when {
+        collect_strings(rw, &mut strings);
+    }
+    for v in meta.rest.values() {
+        collect_strings(v, &mut strings);
+    }
+    strings.iter().any(|s| s.contains("_WIP/"))
+}
+
 fn predicate_token(p: Predicate) -> &'static str {
     match p {
         Predicate::InheritsFrom => "INHERITS_FROM",
@@ -143,6 +170,57 @@ pub fn evaluate(comp: &Composition) -> Report {
                 object: Some(l.object.clone()),
                 reason: "oci:UpstreamImage must not be the subject of SHIMS_FOR \
                          (never patch an upstream image — file a NOTIFY instead)"
+                    .into(),
+            });
+        }
+
+        // I3 — every SHIMS_FOR carries the NOTIFY that tracks this shim.
+        if l.predicate == Predicate::ShimsFor
+            && l.meta
+                .notify
+                .as_deref()
+                .map(str::trim)
+                .unwrap_or("")
+                .is_empty()
+        {
+            report.violations.push(Violation {
+                code: "I3",
+                severity: Severity::Error,
+                subject: Some(l.subject.clone()),
+                predicate: Some(l.predicate),
+                object: Some(l.object.clone()),
+                reason: "SHIMS_FOR must carry a non-empty `notify:` \
+                         (the NOTIFY this shim is tracked by)"
+                    .into(),
+            });
+        }
+
+        // I4 — every SHIMS_FOR carries a retire-when probe + behaviour.
+        if l.predicate == Predicate::ShimsFor
+            && matches!(l.meta.retire_when, None | Some(serde_yaml::Value::Null))
+        {
+            report.violations.push(Violation {
+                code: "I4",
+                severity: Severity::Error,
+                subject: Some(l.subject.clone()),
+                predicate: Some(l.predicate),
+                object: Some(l.object.clone()),
+                reason: "SHIMS_FOR must carry a `retire_when:` block \
+                         (the probe + the behaviour on probe success)"
+                    .into(),
+            });
+        }
+
+        // I8 — no committed link metadata references a gitignored `_WIP/` path.
+        if references_wip(&l.meta) {
+            report.violations.push(Violation {
+                code: "I8",
+                severity: Severity::Error,
+                subject: Some(l.subject.clone()),
+                predicate: Some(l.predicate),
+                object: Some(l.object.clone()),
+                reason: "link metadata references a gitignored `_WIP/` path \
+                         (use the public form)"
                     .into(),
             });
         }
@@ -203,7 +281,7 @@ pub fn evaluate(comp: &Composition) -> Report {
                 && a.subject == l.subject
                 && inherits_reaches(&a.object, &l.object, &inherits)
         });
-        if already_inherited {
+        if already_inherited && l.meta.reason.is_none() {
             report.violations.push(Violation {
                 code: "I6",
                 severity: Severity::Warning,
@@ -240,7 +318,7 @@ pub fn check_all(comp: &Composition) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ontology::{Entity, Link};
+    use crate::ontology::{Entity, Link, LinkMeta};
 
     fn entity(name: &str, t: EntityType) -> Entity {
         Entity {
@@ -256,6 +334,16 @@ mod tests {
             subject: subject.into(),
             predicate,
             object: object.into(),
+            meta: Default::default(),
+        }
+    }
+
+    fn link_meta(subject: &str, predicate: Predicate, object: &str, meta: LinkMeta) -> Link {
+        Link {
+            subject: subject.into(),
+            predicate,
+            object: object.into(),
+            meta,
         }
     }
 
@@ -444,5 +532,107 @@ mod tests {
             report.errors().collect::<Vec<_>>()
         );
         assert_eq!(report.warnings().count(), 0, "no warnings expected");
+    }
+
+    fn shim(meta: LinkMeta) -> Composition {
+        Composition {
+            entities: vec![
+                entity("relay", EntityType::StaticArtifact),
+                entity("pgck", EntityType::DbExtension),
+            ],
+            links: vec![link_meta("relay", Predicate::ShimsFor, "pgck", meta)],
+        }
+    }
+
+    #[test]
+    fn i3_flags_a_shims_for_edge_without_a_notify() {
+        // retire_when present so I4 doesn't also fire — isolate I3.
+        let meta = LinkMeta {
+            retire_when: Some(serde_yaml::Value::String("probe".into())),
+            ..Default::default()
+        };
+        assert_eq!(
+            evaluate(&shim(meta))
+                .errors()
+                .filter(|v| v.code == "I3")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn i3_passes_a_shims_for_with_a_notify() {
+        let meta = LinkMeta {
+            notify: Some("pgck/feature".into()),
+            retire_when: Some(serde_yaml::Value::String("probe".into())),
+            ..Default::default()
+        };
+        assert_eq!(
+            evaluate(&shim(meta))
+                .errors()
+                .filter(|v| v.code == "I3")
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn i4_flags_a_shims_for_without_a_retire_when() {
+        // notify present so I3 doesn't also fire — isolate I4.
+        let meta = LinkMeta {
+            notify: Some("pgck/feature".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            evaluate(&shim(meta))
+                .errors()
+                .filter(|v| v.code == "I4")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn i8_flags_a_link_field_referencing_a_gitignored_wip_path() {
+        // notify + retire_when present (no I3/I4); notify points at a _WIP path.
+        let meta = LinkMeta {
+            notify: Some("_WIP/NOTIFIES.secret.md".into()),
+            retire_when: Some(serde_yaml::Value::String("probe".into())),
+            ..Default::default()
+        };
+        assert_eq!(
+            evaluate(&shim(meta))
+                .errors()
+                .filter(|v| v.code == "I8")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn i6_is_exempted_when_the_copies_from_carries_a_reason() {
+        let dup = LinkMeta {
+            reason: Some("psql trimmed from the base; pulled deliberately".into()),
+            ..Default::default()
+        };
+        let comp = Composition {
+            entities: vec![
+                entity("app", EntityType::FleetImage),
+                entity("mid", EntityType::FleetImage),
+                entity("base", EntityType::UpstreamImage),
+            ],
+            links: vec![
+                link("app", Predicate::InheritsFrom, "mid"),
+                link("mid", Predicate::InheritsFrom, "base"),
+                link_meta("app", Predicate::CopiesFrom, "base", dup),
+            ],
+        };
+        assert_eq!(
+            evaluate(&comp)
+                .warnings()
+                .filter(|v| v.code == "I6")
+                .count(),
+            0
+        );
     }
 }

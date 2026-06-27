@@ -63,12 +63,36 @@ pub struct Entity {
     pub placement_layer: Option<String>,
 }
 
+/// The parsed YAML body of a link (SPEC §6 edge metadata). Fields vary by
+/// predicate; unknown keys are kept in `rest` so emitters and later invariants can
+/// read them. An empty body (`{}`) deserialises to all-defaults.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct LinkMeta {
+    /// SHIMS_FOR: the NOTIFY this shim is tracked by, in public form (I3).
+    #[serde(default)]
+    pub notify: Option<String>,
+    /// SHIMS_FOR: the retire-when probe + behaviour (I4). Block or string.
+    #[serde(default)]
+    pub retire_when: Option<serde_yaml::Value>,
+    /// COPIES_FROM: justification for a duplicate pull (I6 exemption).
+    #[serde(default)]
+    pub reason: Option<String>,
+    /// SHIMS_FOR: human note on why the shim exists.
+    #[serde(default)]
+    pub because: Option<String>,
+    /// Any other edge metadata (paths, mount_at, run, kind, package, …).
+    #[serde(flatten, default)]
+    pub rest: std::collections::BTreeMap<String, serde_yaml::Value>,
+}
+
 /// A directed predicate instance (SPEC §6 `links/<subj>.<PRED>.<obj>.yaml`).
 #[derive(Debug, Clone)]
 pub struct Link {
     pub subject: String,
     pub predicate: Predicate,
     pub object: String,
+    /// The parsed link-file body (edge metadata); all-defaults when the file is `{}`.
+    pub meta: LinkMeta,
 }
 
 impl Link {
@@ -91,6 +115,7 @@ impl Link {
                     subject: stem[..i].to_string(),
                     predicate: pred,
                     object: stem[i + pat.len()..].to_string(),
+                    meta: LinkMeta::default(),
                 });
             }
         }
@@ -149,7 +174,13 @@ impl Composition {
             files.sort();
             for f in files {
                 let stem = f.file_stem().and_then(|s| s.to_str()).unwrap_or_default();
-                links.push(Link::from_filename(stem)?);
+                let mut link = Link::from_filename(stem)?;
+                let body = std::fs::read_to_string(&f)?;
+                if !body.trim().is_empty() {
+                    link.meta = serde_yaml::from_str(&body)
+                        .map_err(|err| anyhow::anyhow!("{}: {err}", f.display()))?;
+                }
+                links.push(link);
             }
         }
 
