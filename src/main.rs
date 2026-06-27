@@ -45,7 +45,7 @@ enum Cmd {
         #[arg(long, default_value = "auto")]
         mode: String,
     },
-    /// Parse + run invariants I1–I8 without emitting (the CI `compose --check`).
+    /// Parse + run the implemented invariants without emitting (the CI `compose --check`).
     Check {
         /// The `<bundle>.composition/` directory.
         dir: PathBuf,
@@ -63,7 +63,7 @@ fn main() -> anyhow::Result<()> {
             let comp = ontology::Composition::load(&dir)?;
             invariants::check_all(&comp)?;
             println!(
-                "ok: {} entities, {} links — invariants I1–I8 pass",
+                "ok: {} entities, {} links — invariants pass (I1, I2, I5, I6)",
                 comp.entities.len(),
                 comp.links.len()
             );
