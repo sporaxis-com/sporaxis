@@ -18,6 +18,7 @@
 mod invariants;
 mod ontology;
 mod render;
+mod ttl;
 
 use std::path::PathBuf;
 

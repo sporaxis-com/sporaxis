@@ -18,6 +18,9 @@ clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 anyhow = "1"
+# RDF model + Turtle/SPARQL — the ontology-first backbone. The composition graph
+# lives as triples; composition.ttl (SPEC v0.2 §E) is a serialisation of it.
+oxigraph = "0.4"
 
 [profile.release]
 strip = true
