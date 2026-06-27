@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+# One run per ref; a new push cancels the in-flight one (mercy on the runners).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -13,19 +18,20 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      # Cache ~/.cargo + target so oxigraph & friends compile once, not every run.
+      - uses: Swatinem/rust-cache@v2
       - name: fmt
         run: cargo fmt --all --check
       - name: clippy
         run: cargo clippy --all-targets -- -D warnings
-      - name: build
-        run: cargo build --release
       - name: test
         run: cargo test
+      # Dogfood on the debug build (no LTO) — LTO/release is built only at tag time.
       - name: dogfood — sporaxis validates its own example compositions
         run: |
           set -euo pipefail
           for c in examples/*.composition; do
             echo "::group::sporaxis check $c"
-            ./target/release/sporaxis check "$c"
+            cargo run --quiet -- check "$c"
             echo "::endgroup::"
           done
