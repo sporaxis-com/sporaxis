@@ -13,16 +13,18 @@
 as a GitHub **Release tarball** with an SLSA Build Provenance v1 attestation. (No
 GHCR image — `sporaxis` is the engine, not a bundle.)
 
-## sporaxis CLI
+## sporaxis CLI — `v0.0.1`
 
-> **No attested release published yet.**
->
-> The bootstrap release `v0.0.1` is the first tag pushed after the attested
-> release pipeline existed; its workflow run is the first to issue an attestation.
-> Until that run completes and `gh attestation verify` accepts the tarball, this
-> file does not advertise a version. Track build status on the
-> [Actions tab](https://github.com/sporaxis-com/sporaxis/actions); see all
-> releases at [Releases](https://github.com/sporaxis-com/sporaxis/releases).
+`curl -fsSL https://github.com/sporaxis-com/sporaxis/releases/latest/download/sporaxis-v0.0.1-x86_64-unknown-linux-gnu.tar.gz | tar -xz`
+
+| Target | Tarball | Digest | Released (UTC) |
+|--------|---------|--------|----------------|
+| x86_64-unknown-linux-gnu | `sporaxis-v0.0.1-x86_64-unknown-linux-gnu.tar.gz` | `sha256:374c0150eb00ad5911832754c467f5bd521a4f0f2f5101ed7775e02f84680506` | 2026-06-27 06:05:00 |
+
+|             |                                                                   |
+|-------------|-------------------------------------------------------------------|
+| Release     | https://github.com/sporaxis-com/sporaxis/releases/tag/v0.0.1                      |
+| Provenance  | SLSA Build Provenance v1 — `gh attestation verify sporaxis-v0.0.1-x86_64-unknown-linux-gnu.tar.gz --repo sporaxis-com/sporaxis` |
 
 ## Pin policy
 
