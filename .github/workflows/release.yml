@@ -1,0 +1,64 @@
+name: release
+
+# Cut a release by pushing a `vX.Y.Z` tag. The job gates on the version matching
+# the tag (Cargo.toml is the source), then clippy + test, then builds, packages,
+# SLSA-attests, and publishes the GitHub release. No artifact is published unless
+# the gate + tests pass first (gate-before-publish).
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # create the release
+  id-token: write # SLSA Build Provenance
+  attestations: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Gate — Cargo.toml version == tag
+        run: |
+          set -euo pipefail
+          v=$(cargo metadata --no-deps --format-version 1 \
+              | python3 -c "import json,sys;print(json.load(sys.stdin)['packages'][0]['version'])")
+          if [ "v$v" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::Cargo.toml version v$v != tag ${GITHUB_REF_NAME}"; exit 1
+          fi
+          echo "version v$v == tag ${GITHUB_REF_NAME} ✓"
+
+      - name: Gate — clippy + test
+        run: |
+          cargo clippy --all-targets -- -D warnings
+          cargo test
+
+      - name: Build (release)
+        run: cargo build --release
+
+      - name: Package + checksums
+        run: |
+          set -euo pipefail
+          pkg="sporaxis-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu.tar.gz"
+          tar czf "$pkg" -C target/release sporaxis
+          sha256sum "$pkg" > SHA256SUMS
+          echo "PKG=$pkg" >> "$GITHUB_ENV"
+
+      - name: Attest build provenance (SLSA v1)
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ${{ env.PKG }}
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ env.PKG }}
+            SHA256SUMS
+          generate_release_notes: true
