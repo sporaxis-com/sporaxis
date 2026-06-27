@@ -429,4 +429,20 @@ mod tests {
             "I1 postgres-bookworm BUILDS patched: never compile an upstream image"
         );
     }
+
+    #[test]
+    fn the_ck_allinone_example_passes_every_invariant() {
+        // The bundled M1 reference composition must stay clean — no errors, no
+        // warnings — so it remains a faithful, validatable input for M2.
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("examples/ck-allinone.composition");
+        let comp = crate::ontology::Composition::load(&dir).expect("load ck-allinone");
+        let report = evaluate(&comp);
+        assert!(
+            !report.has_errors(),
+            "ck-allinone must pass: {:?}",
+            report.errors().collect::<Vec<_>>()
+        );
+        assert_eq!(report.warnings().count(), 0, "no warnings expected");
+    }
 }
