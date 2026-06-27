@@ -63,7 +63,7 @@ fn main() -> anyhow::Result<()> {
             let comp = ontology::Composition::load(&dir)?;
             invariants::check_all(&comp)?;
             println!(
-                "ok: {} entities, {} links — invariants pass (I1, I2, I5, I6)",
+                "ok: {} entities, {} links — invariants pass (I1–I6, I8)",
                 comp.entities.len(),
                 comp.links.len()
             );

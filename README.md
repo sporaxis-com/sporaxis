@@ -199,9 +199,9 @@ it drives — declaration → artifact. Built in **Rust** to unify the fleet too
 ## Status
 
 **Scaffold (pre-M2).** The CLI, the closed-set ontology types, the directory
-parser, the `composition.ttl` (RDF) emitter, and the graph invariants **I1, I2,
-I5, I6** run today — the bundled `examples/ck-allinone.composition/` validates
-with `sporaxis check`. The remaining invariants (I3/I4/I7/I8) and the
+parser, the `composition.ttl` (RDF) emitter, and the graph invariants **I1–I6
+and I8** run today — the bundled `examples/ck-allinone.composition/` validates
+with `sporaxis check`. Only **I7** (an emit-time rule) and the
 Dockerfile/manifest emitters land at milestone **M2**: reproduce
 `oci-germination`'s `ck-allinone` bundle byte-for-byte (`diff -r`), so the
 assembler is provably faithful before anything depends on it. Follow progress on

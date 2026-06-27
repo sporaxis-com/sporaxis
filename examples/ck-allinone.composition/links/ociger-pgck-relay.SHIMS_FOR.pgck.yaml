@@ -1,1 +1,5 @@
-{}
+# The relay shim attaches to pgck (I2: a shim never modifies the upstream).
+notify: pgck/publish-nats-client-feature-build        # public form (I3) — not a _WIP path (I8)
+retire_when:                                           # I4 — probe + behaviour-on-success
+  probe: "pgck.so contains both RELAY_OUT_PREFIX and async_nats::"
+  on_success: no-op + park
