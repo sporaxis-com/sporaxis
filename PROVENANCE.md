@@ -176,3 +176,4 @@ pending ask.
 - Verifier: `gh attestation verify` (built into `gh` 2.49+)
 - Coordination protocol: maintained privately, outside the committed tree
 - Latest attested artifact: [`LATEST.md`](./LATEST.md)
+- Release narrative: [`CHANGELOG.md`](./CHANGELOG.md)
