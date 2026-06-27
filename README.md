@@ -199,11 +199,13 @@ it drives — declaration → artifact. Built in **Rust** to unify the fleet too
 ## Status
 
 **Scaffold (pre-M2).** The CLI, the closed-set ontology types, the directory
-parser, and the `composition.ttl` (RDF) emitter are real and run today. The
-I1–I8 checks and the Dockerfile/manifest emitters land at milestone **M2**:
-reproduce `oci-germination`'s current `ck-allinone` bundle byte-for-byte
-(`diff -r`), so the assembler is provably faithful before anything depends on it.
-Follow progress on the [project board](https://github.com/sporaxis-com/sporaxis).
+parser, the `composition.ttl` (RDF) emitter, and the graph invariants **I1, I2,
+I5, I6** run today — the bundled `examples/ck-allinone.composition/` validates
+with `sporaxis check`. The remaining invariants (I3/I4/I7/I8) and the
+Dockerfile/manifest emitters land at milestone **M2**: reproduce
+`oci-germination`'s `ck-allinone` bundle byte-for-byte (`diff -r`), so the
+assembler is provably faithful before anything depends on it. Follow progress on
+the [project board](https://github.com/sporaxis-com/sporaxis).
 
 ## Releases & provenance
 

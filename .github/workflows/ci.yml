@@ -21,3 +21,11 @@ jobs:
         run: cargo build --release
       - name: test
         run: cargo test
+      - name: dogfood — sporaxis validates its own example compositions
+        run: |
+          set -euo pipefail
+          for c in examples/*.composition; do
+            echo "::group::sporaxis check $c"
+            ./target/release/sporaxis check "$c"
+            echo "::endgroup::"
+          done
