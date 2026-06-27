@@ -5,6 +5,18 @@ provenance (the attestation is the cryptographic half; see [`PROVENANCE.md`](./P
 Newest first. The attested head is in [`LATEST.md`](./LATEST.md); each tagged
 release also carries auto-generated GitHub release notes.
 
+## v0.0.4 — 2026-06-27
+
+- **Changed:** link-body metadata parsing (`ontology::LinkMeta`) and the
+  metadata-dependent invariants — **I3** (`SHIMS_FOR` carries `notify:`), **I4**
+  (`SHIMS_FOR` carries `retire_when:`), **I8** (no link metadata references a
+  gitignored `_WIP/` path), plus an **I6** `reason:` exemption (#3) — completing
+  the invariant set at the graph level (only I7, an emit-time rule, remains for
+  M2). CI made lean: dependency caching + the per-push LTO build dropped (debug
+  only; LTO at tag time) + concurrency cancellation (~18 min → minutes).
+- **Tests:** `fmt` / `clippy -D warnings` / 20 unit tests green; dogfood
+  (`sporaxis check`) passes both example compositions.
+
 ## v0.0.3 — 2026-06-27
 
 - **Changed:** graph invariants **I1, I2, I5, I6** enforced with a structured
