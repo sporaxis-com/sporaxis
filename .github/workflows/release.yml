@@ -45,7 +45,10 @@ jobs:
       - name: Package + checksums
         run: |
           set -euo pipefail
-          pkg="sporaxis-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu.tar.gz"
+          # Version-less asset name so `releases/latest/download/<asset>` resolves
+          # to a stable curl URL; the release tag carries the version, and the
+          # attestation binds the tarball by digest (name is irrelevant to verify).
+          pkg="sporaxis-x86_64-unknown-linux-gnu.tar.gz"
           tar czf "$pkg" -C target/release sporaxis
           sha256sum "$pkg" > SHA256SUMS
           echo "PKG=$pkg" >> "$GITHUB_ENV"

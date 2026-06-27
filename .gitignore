@@ -3,6 +3,9 @@
 Cargo.lock.bak
 .DS_Store
 
+# Python bytecode (tools/render-latest-md.py)
+__pycache__/
+
 # WIP scratch — confidential drafts, never committed
 _WIP/
 examples/**/composition.ttl
