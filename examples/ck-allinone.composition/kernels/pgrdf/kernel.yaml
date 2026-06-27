@@ -1,0 +1,3 @@
+type: "ext:DBExtension"
+version: "0.6.17"
+placement_layer: "ghcr.io/styk-tv/pgrdf-bundle:0.6.17-pg17"
