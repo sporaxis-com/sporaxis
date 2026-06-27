@@ -1,0 +1,108 @@
+name: update-latest-md
+
+# Refresh LATEST.md after a release — but ONLY after SLSA Build Provenance v1
+# verifies for the just-published tarball. This workflow is the single allowed
+# writer of LATEST.md (PROVENANCE.md Rule 2/3): if `gh attestation verify`
+# rejects the artifact, LATEST.md stays where it was.
+
+on:
+  workflow_run:
+    workflows: [release]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to verify + advertise (e.g. v0.0.2)"
+        required: true
+        type: string
+
+permissions:
+  contents: write # commit the refreshed LATEST.md
+  attestations: read # gh attestation verify
+
+jobs:
+  refresh:
+    # Only on a successful release run, or on manual dispatch.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Resolve the release tag
+        id: tag
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            # Tag-triggered release runs set head_branch to the tag name.
+            TAG="${{ github.event.workflow_run.head_branch }}"
+          fi
+          case "$TAG" in
+            v*) ;;
+            *) echo "::error::not a release tag: '$TAG'"; exit 1 ;;
+          esac
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Refreshing LATEST.md for $TAG"
+
+      - name: Download the release tarball
+        id: dl
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          rm -rf dl && mkdir dl
+          gh release download "$TAG" --repo "$REPO" -p '*.tar.gz' -D dl
+          tarball=$(ls dl/*.tar.gz | head -1)
+          if [ -z "$tarball" ]; then echo "::error::no tarball asset on $TAG"; exit 1; fi
+          echo "path=$tarball" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$tarball")" >> "$GITHUB_OUTPUT"
+
+      - name: Verify SLSA Build Provenance (the gate)
+        env:
+          TARBALL: ${{ steps.dl.outputs.path }}
+        run: |
+          set -euo pipefail
+          echo "::group::gh attestation verify $TARBALL"
+          gh attestation verify "$TARBALL" --repo "$REPO"
+          echo "::endgroup::"
+
+      - name: Compute digest
+        id: digest
+        env:
+          TARBALL: ${{ steps.dl.outputs.path }}
+        run: |
+          set -euo pipefail
+          sum=$(sha256sum "$TARBALL" | awk '{print $1}')
+          echo "sha256=sha256:$sum" >> "$GITHUB_OUTPUT"
+
+      - name: Render LATEST.md
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          DIGEST: ${{ steps.digest.outputs.sha256 }}
+          TARBALL: ${{ steps.dl.outputs.name }}
+        run: |
+          set -euo pipefail
+          REPO="$REPO" TAG="$TAG" DIGEST="$DIGEST" TARBALL="$TARBALL" \
+            python3 tools/render-latest-md.py > LATEST.md.new
+          mv LATEST.md.new LATEST.md
+
+      - name: Commit refresh if changed
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet LATEST.md; then
+            echo "LATEST.md already current — nothing to do"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add LATEST.md
+          git commit -m "docs(auto): advance LATEST.md to ${TAG} (attestation-verified) [skip ci]"
+          git push origin main
