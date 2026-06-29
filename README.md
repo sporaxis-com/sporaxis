@@ -118,21 +118,22 @@ Validate the graph, then assemble:
 
 ```sh
 sporaxis check demo.composition
-# ok: 3 entities, 2 links — invariants I1–I8 pass
+# ok: 3 entities, 2 links — invariants pass (I1–I6, I8)
 
 sporaxis compose demo.composition --mode auto
-# compose: 3 entities, 2 links → mode=manifest (from demo.composition)
-#   composition.ttl: … bytes → demo.composition/composition.ttl
+# compose: 3 entities, 2 links → mode=manifest → demo.composition/out/  (composition.ttl, bundle.yaml, manifest.plan.txt, smoke-….sh)
 ```
 
-`auto` picked **manifest** because every consumed entity is layer-referenceable
-(each carries a `placement_layer`, or is itself a fleet image) — so the image is
-assembled from existing layers with **no `docker build`**. Drop the
-`placement_layer` and `auto` falls back to `dockerfile`, telling you what forced
-it.
+Everything physical is written under `<composition>/out/` — deterministically, so
+the same graph re-composes byte-for-byte. `auto` picked **manifest** because every
+consumed entity is layer-referenceable (each carries a `placement_layer`, or is
+itself a fleet image) — so the image is assembled from existing layers with **no
+`docker build`** (`out/manifest.plan.txt` is the by-digest layer plan). Drop a
+`placement_layer` and `auto` falls back to `dockerfile` (`out/Dockerfile` +
+`out/s6-services/`), telling you what forced it.
 
-The emitted `composition.ttl` is the same graph expressed as RDF — the
-ontology-first result:
+One of the outputs, `out/composition.ttl`, is the same graph expressed as RDF —
+the ontology-first result:
 
 ```turtle
 <…/compose#ck-allinone> a <…/compose#FleetImage> ;

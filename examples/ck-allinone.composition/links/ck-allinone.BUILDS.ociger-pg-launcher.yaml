@@ -1,1 +1,2 @@
-{}
+kind: go
+package: ./cmd/ociger-pg-launcher
