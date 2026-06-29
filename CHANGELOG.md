@@ -5,6 +5,18 @@ provenance (the attestation is the cryptographic half; see [`PROVENANCE.md`](./P
 Newest first. The attested head is in [`LATEST.md`](./LATEST.md); each tagged
 release also carries auto-generated GitHub release notes.
 
+## v0.0.5 — 2026-06-29
+
+- **Changed:** the **emitters** (#4) — `sporaxis compose` renders the physical
+  outputs deterministically under `<composition>/out/`: a `Dockerfile`
+  (INHERITS_FROM / BUILDS / COPIES_FROM + **I7** labels from the `oci:FleetImage`
+  entity only), the `s6-services/` tree (SUPERVISES), `bundle.yaml` (the layer
+  BOM), `smoke-<bundle>.sh` (SMOKES_BY), and `manifest.plan.txt` for manifest mode
+  (by-digest, no build). Re-composing is byte-identical (SPEC §4). The ck-allinone
+  example's edges gained their real metadata.
+- **Tests:** `fmt` / `clippy -D warnings` / 25 unit tests green; verified
+  end-to-end on both examples (dockerfile + manifest), determinism confirmed.
+
 ## v0.0.4 — 2026-06-27
 
 - **Changed:** link-body metadata parsing (`ontology::LinkMeta`) and the

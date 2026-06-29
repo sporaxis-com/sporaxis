@@ -1,6 +1,6 @@
 [package]
 name = "sporaxis"
-version = "0.0.4"
+version = "0.0.5"
 edition = "2021"
 description = "Ontology-first OCI bundle assembler — declaration in; Dockerfile, referenced OCI manifest, and composition.ttl out."
 license = "MIT"
