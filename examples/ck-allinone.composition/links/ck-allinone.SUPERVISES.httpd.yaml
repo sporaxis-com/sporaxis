@@ -1,1 +1,1 @@
-{}
+run: /bin/busybox httpd -f -p 8000 -h /app

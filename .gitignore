@@ -9,3 +9,6 @@ __pycache__/
 # WIP scratch — confidential drafts, never committed
 _WIP/
 examples/**/composition.ttl
+
+# Emitted bundle outputs (sporaxis compose)
+examples/**/out/
