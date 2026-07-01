@@ -46,6 +46,68 @@ pub enum Predicate {
     SmokesBy,
 }
 
+/// SPEC §? — how a component's integrity is (or is not) provable. Recording the
+/// *method* rather than a boolean is deliberate: the mix is not uniformly attested
+/// (SLSA vs docker-official vs a bare checksum vs nothing), and full disclosure
+/// means naming which. `None` is a real, declarable state — but I9 then requires a
+/// `reason:` so the gap is *declared*, never silent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+pub enum AttestationMethod {
+    /// SLSA build provenance verifiable with `gh attestation verify` (exit 0).
+    #[serde(rename = "gh-slsa")]
+    GhSlsa,
+    /// A Docker Official Image — trusted by registry provenance, not gh-attestable.
+    #[serde(rename = "docker-official")]
+    DockerOfficial,
+    /// Integrity pinned by a published checksum (e.g. SHA256SUMS), not attested.
+    #[serde(rename = "checksum")]
+    Checksum,
+    /// No attestation and no checksum pin. Requires a `reason:` (I9).
+    #[default]
+    #[serde(rename = "none")]
+    None,
+}
+
+impl AttestationMethod {
+    /// The canonical token used in `composition.ttl` and reports.
+    pub fn token(self) -> &'static str {
+        match self {
+            AttestationMethod::GhSlsa => "gh-slsa",
+            AttestationMethod::DockerOfficial => "docker-official",
+            AttestationMethod::Checksum => "checksum",
+            AttestationMethod::None => "none",
+        }
+    }
+}
+
+/// SPEC §? — per-entity provenance disclosure (the attestable manifest). Every
+/// registry-consumed component (`placement_layer` set) must carry `digest` +
+/// `attestation` (I9); in-tree artifacts inherit their FleetImage's attestation and
+/// may leave these empty. Emitted into `composition.ttl` so "what is `<version>`?"
+/// is a query over the BOM, not tribal knowledge.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Provenance {
+    /// The OCI manifest digest this pin resolves to (`sha256:…`).
+    #[serde(default)]
+    pub digest: Option<String>,
+    /// Source repo or distribution channel (e.g. `styk-tv/pgRDF`, `docker official`).
+    #[serde(default)]
+    pub origin: Option<String>,
+    /// How integrity is proved. `none` demands a `reason:` (I9).
+    #[serde(default)]
+    pub attestation: Option<AttestationMethod>,
+    /// Required when `attestation: none` — why the gap is accepted (mirrors I6's
+    /// `reason:` exemption). Makes an unattested component a *declared* exemption.
+    #[serde(default)]
+    pub reason: Option<String>,
+    /// For in-repo FleetImages/StaticArtifacts: the commit that last produced it.
+    #[serde(default)]
+    pub last_commit: Option<String>,
+    /// For in-repo artifacts: who authored that commit.
+    #[serde(default)]
+    pub committed_by: Option<String>,
+}
+
 /// A composition entity (SPEC §6 `kernels/<name>/kernel.yaml`).
 #[derive(Debug, Clone, Deserialize)]
 pub struct Entity {
@@ -61,6 +123,9 @@ pub struct Entity {
     /// unlocks the manifest-assembly output mode (no `docker build`).
     #[serde(default)]
     pub placement_layer: Option<String>,
+    /// SPEC §? — provenance disclosure block; `None` when the kernel omits it.
+    #[serde(default)]
+    pub provenance: Option<Provenance>,
 }
 
 /// The parsed YAML body of a link (SPEC §6 edge metadata). Fields vary by

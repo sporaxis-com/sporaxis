@@ -10,6 +10,7 @@
 //! - I5  every `svc:Process` has a `SMOKES_BY` (`… none` ⇒ classified `pure`)            [error/warn]
 //! - I6  duplicate-pull: COPIES_FROM(x, upstream) already inherited, unless `reason:`    [warn]
 //! - I8  no committed link metadata references a `.gitignore`'d `_WIP/` path             [error]
+//! - I9  registry-consumed entity discloses `digest` + `attestation` (attestability)     [error]
 //!
 //! All graph-level. Only **I7** remains — manifest labels derive only from the
 //! `oci:FleetImage` entity — and it is an emit-time rule enforced by the renderer
@@ -18,7 +19,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::ontology::{Composition, EntityType, LinkMeta, Predicate};
+use crate::ontology::{AttestationMethod, Composition, EntityType, LinkMeta, Predicate};
 
 /// Whether a violation blocks emission (`Error`) or is advisory (`Warning`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -295,6 +296,66 @@ pub fn evaluate(comp: &Composition) -> Report {
         }
     }
 
+    // I9 — provenance / attestability. Every registry-consumed component
+    // (`placement_layer` set) must disclose a `digest:` and an `attestation:`
+    // method; `attestation: none` must carry a `reason:` so an unattested
+    // component is a *declared* exemption, never a silent gap. In-tree artifacts
+    // (no placement_layer) inherit their FleetImage's attestation and are exempt.
+    for e in &comp.entities {
+        if e.placement_layer.is_none() {
+            continue;
+        }
+        let prov = e.provenance.as_ref();
+        if prov
+            .and_then(|p| p.digest.as_deref())
+            .unwrap_or("")
+            .trim()
+            .is_empty()
+        {
+            report.violations.push(Violation {
+                code: "I9",
+                severity: Severity::Error,
+                subject: Some(e.name.clone()),
+                predicate: None,
+                object: None,
+                reason: "registry-consumed component (placement_layer set) must disclose a \
+                         provenance `digest:` (the attestable manifest)"
+                    .into(),
+            });
+        }
+        match prov.and_then(|p| p.attestation) {
+            None => report.violations.push(Violation {
+                code: "I9",
+                severity: Severity::Error,
+                subject: Some(e.name.clone()),
+                predicate: None,
+                object: None,
+                reason: "provenance must declare an `attestation:` method \
+                         (gh-slsa | docker-official | checksum | none)"
+                    .into(),
+            }),
+            Some(AttestationMethod::None)
+                if prov
+                    .and_then(|p| p.reason.as_deref())
+                    .unwrap_or("")
+                    .trim()
+                    .is_empty() =>
+            {
+                report.violations.push(Violation {
+                    code: "I9",
+                    severity: Severity::Error,
+                    subject: Some(e.name.clone()),
+                    predicate: None,
+                    object: None,
+                    reason: "attestation `none` must carry a `reason:` \
+                             (declare the gap; do not leave it silent)"
+                        .into(),
+                });
+            }
+            _ => {}
+        }
+    }
+
     report
 }
 
@@ -318,7 +379,7 @@ pub fn check_all(comp: &Composition) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ontology::{Entity, Link, LinkMeta};
+    use crate::ontology::{Entity, Link, LinkMeta, Provenance};
 
     fn entity(name: &str, t: EntityType) -> Entity {
         Entity {
@@ -326,6 +387,19 @@ mod tests {
             entity_type: t,
             version: None,
             placement_layer: None,
+            provenance: None,
+        }
+    }
+
+    /// A registry-consumed entity (has a `placement_layer`) with the given provenance,
+    /// for exercising I9.
+    fn placed(name: &str, prov: Option<Provenance>) -> Entity {
+        Entity {
+            name: name.into(),
+            entity_type: EntityType::DbExtension,
+            version: Some("1.0.0".into()),
+            placement_layer: Some(format!("ghcr.io/x/{name}:1.0.0")),
+            provenance: prov,
         }
     }
 
@@ -381,6 +455,95 @@ mod tests {
         let i2: Vec<_> = report.errors().filter(|v| v.code == "I2").collect();
         assert_eq!(i2.len(), 1, "one I2 error for the upstream SHIMS_FOR edge");
         assert_eq!(i2[0].subject.as_deref(), Some("postgres-bookworm"));
+    }
+
+    #[test]
+    fn i9_flags_a_registry_component_missing_provenance() {
+        let comp = Composition {
+            entities: vec![placed("pgrdf", None)],
+            links: vec![],
+        };
+        let i9: Vec<_> = evaluate(&comp)
+            .violations
+            .into_iter()
+            .filter(|v| v.code == "I9")
+            .collect();
+        // one for the missing digest, one for the missing attestation method.
+        assert_eq!(i9.len(), 2, "missing digest + missing attestation");
+        assert!(i9.iter().all(|v| v.severity == Severity::Error));
+    }
+
+    #[test]
+    fn i9_passes_a_fully_attested_component() {
+        let comp = Composition {
+            entities: vec![placed(
+                "pgrdf",
+                Some(Provenance {
+                    digest: Some("sha256:abc".into()),
+                    origin: Some("styk-tv/pgRDF".into()),
+                    attestation: Some(AttestationMethod::GhSlsa),
+                    ..Default::default()
+                }),
+            )],
+            links: vec![],
+        };
+        assert_eq!(
+            evaluate(&comp)
+                .violations
+                .iter()
+                .filter(|v| v.code == "I9")
+                .count(),
+            0,
+            "gh-slsa + digest is complete"
+        );
+    }
+
+    #[test]
+    fn i9_requires_a_reason_for_attestation_none() {
+        // attestation: none WITHOUT a reason → I9 error (the s6-overlay gap must be declared).
+        let bare = Composition {
+            entities: vec![placed(
+                "s6-overlay",
+                Some(Provenance {
+                    digest: Some("sha256:def".into()),
+                    attestation: Some(AttestationMethod::None),
+                    ..Default::default()
+                }),
+            )],
+            links: vec![],
+        };
+        assert_eq!(
+            evaluate(&bare)
+                .violations
+                .iter()
+                .filter(|v| v.code == "I9")
+                .count(),
+            1,
+            "none without reason is flagged"
+        );
+
+        // same, WITH a reason → declared exemption, no violation.
+        let declared = Composition {
+            entities: vec![placed(
+                "s6-overlay",
+                Some(Provenance {
+                    digest: Some("sha256:def".into()),
+                    attestation: Some(AttestationMethod::None),
+                    reason: Some("upstream ships no SLSA; pinned by release tag only".into()),
+                    ..Default::default()
+                }),
+            )],
+            links: vec![],
+        };
+        assert_eq!(
+            evaluate(&declared)
+                .violations
+                .iter()
+                .filter(|v| v.code == "I9")
+                .count(),
+            0,
+            "none WITH reason is a declared exemption"
+        );
     }
 
     #[test]
