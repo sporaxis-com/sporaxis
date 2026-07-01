@@ -346,6 +346,7 @@ mod tests {
             entity_type: t,
             version: version.map(Into::into),
             placement_layer: placement.map(Into::into),
+            provenance: None,
         }
     }
 

@@ -47,6 +47,12 @@ pub fn to_turtle(comp: &Composition) -> anyhow::Result<String> {
     let rdf_type = nn(RDF_TYPE)?;
     let sx_version = nn(format!("{SX}version"))?;
     let sx_placement = nn(format!("{SX}placementLayer"))?;
+    let sx_digest = nn(format!("{SX}digest"))?;
+    let sx_origin = nn(format!("{SX}origin"))?;
+    let sx_attestation = nn(format!("{SX}attestation"))?;
+    let sx_attestation_reason = nn(format!("{SX}attestationReason"))?;
+    let sx_last_commit = nn(format!("{SX}lastCommit"))?;
+    let sx_committed_by = nn(format!("{SX}committedBy"))?;
 
     for e in &comp.entities {
         let subj = nn(format!("{SX}{}", e.name))?;
@@ -67,11 +73,41 @@ pub fn to_turtle(comp: &Composition) -> anyhow::Result<String> {
         }
         if let Some(p) = &e.placement_layer {
             store.insert(&Quad::new(
-                subj,
+                subj.clone(),
                 sx_placement.clone(),
                 Literal::new_simple_literal(p.as_str()),
                 GraphName::DefaultGraph,
             ))?;
+        }
+        // Provenance disclosure (the attestable manifest) — one literal per field.
+        if let Some(pv) = &e.provenance {
+            let lit = |pred: &NamedNode, val: &str| -> anyhow::Result<()> {
+                store.insert(&Quad::new(
+                    subj.clone(),
+                    pred.clone(),
+                    Literal::new_simple_literal(val),
+                    GraphName::DefaultGraph,
+                ))?;
+                Ok(())
+            };
+            if let Some(d) = &pv.digest {
+                lit(&sx_digest, d)?;
+            }
+            if let Some(o) = &pv.origin {
+                lit(&sx_origin, o)?;
+            }
+            if let Some(a) = pv.attestation {
+                lit(&sx_attestation, a.token())?;
+            }
+            if let Some(r) = &pv.reason {
+                lit(&sx_attestation_reason, r)?;
+            }
+            if let Some(c) = &pv.last_commit {
+                lit(&sx_last_commit, c)?;
+            }
+            if let Some(b) = &pv.committed_by {
+                lit(&sx_committed_by, b)?;
+            }
         }
     }
 
@@ -94,7 +130,7 @@ pub fn to_turtle(comp: &Composition) -> anyhow::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ontology::{Entity, Link};
+    use crate::ontology::{AttestationMethod, Entity, Link, Provenance};
 
     #[test]
     fn emits_turtle_for_a_small_graph() {
@@ -105,12 +141,19 @@ mod tests {
                     entity_type: EntityType::FleetImage,
                     version: Some("v0.7.22".into()),
                     placement_layer: None,
+                    provenance: None,
                 },
                 Entity {
                     name: "pgrdf".into(),
                     entity_type: EntityType::DbExtension,
                     version: Some("0.6.17".into()),
-                    placement_layer: Some("sha256:abc".into()),
+                    placement_layer: Some("ghcr.io/styk-tv/pgrdf-bundle:0.6.17-pg17".into()),
+                    provenance: Some(Provenance {
+                        digest: Some("sha256:abc".into()),
+                        origin: Some("styk-tv/pgRDF".into()),
+                        attestation: Some(AttestationMethod::GhSlsa),
+                        ..Default::default()
+                    }),
                 },
             ],
             links: vec![Link {
@@ -125,5 +168,8 @@ mod tests {
         assert!(ttl.contains("0.6.17"), "version literal present");
         assert!(ttl.contains("INHERITS_FROM"), "predicate present");
         assert!(ttl.contains("placementLayer"), "placement layer present");
+        assert!(ttl.contains("sha256:abc"), "provenance digest present");
+        assert!(ttl.contains("gh-slsa"), "attestation method present");
+        assert!(ttl.contains("styk-tv/pgRDF"), "origin present");
     }
 }

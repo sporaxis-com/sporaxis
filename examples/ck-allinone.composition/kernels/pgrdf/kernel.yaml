@@ -1,3 +1,7 @@
 type: "ext:DBExtension"
-version: "0.6.17"
-placement_layer: "ghcr.io/styk-tv/pgrdf-bundle:0.6.17-pg17"
+version: "0.6.18"
+placement_layer: "ghcr.io/styk-tv/pgrdf-bundle:0.6.18-pg17"
+provenance:
+  digest: "sha256:98b0cca80f22aafc35c89b0bd9519bb8765c720e4c54ce6c683b9e683920d352"
+  origin: "styk-tv/pgRDF"
+  attestation: "gh-slsa"

@@ -1,3 +1,7 @@
 type: "ext:DBExtension"
 version: "0.4.15"
 placement_layer: "ghcr.io/styk-tv/pgck:0.4.15-pg17"
+provenance:
+  digest: "sha256:369b5aa598537e37951a1f076c692129befdfc97f83bbaed6d3d5f6e521062b0"
+  origin: "styk-tv/pgCK"
+  attestation: "gh-slsa"
